@@ -5,6 +5,10 @@ const cors = require('cors');
 
 const app = express();
 
+// Middleware
+app.use(cors());
+app.use(express.json());
+
 //Connect to MongoDB
 mongoose
   .connect(process.env.MONGO_URI, {
@@ -16,6 +20,10 @@ mongoose
     console.error('❌ MongoDB connection error:', err.message);
     process.exit(1);
   });
+
+// Routes for API
+const authRoutes = require('./routes/auth');
+app.use('/api/auth', authRoutes);
 
 // home route check
 app.get('/', (req, res) => {
