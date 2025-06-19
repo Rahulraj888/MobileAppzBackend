@@ -145,7 +145,7 @@ router.post(
         return res.status(400).json({ msg: 'No account with that email found.' });
       }
       if (user.isVerified) {
-        return res.status(400).json({ msg: 'Email is already verified.' });
+        return res.status(400).json({ msg: 'Email is already verified. Please proceed to Login' });
       }
 
       //Create new token + expiry
@@ -170,6 +170,74 @@ router.post(
     }
   }
 );
+
+
+// ─── @route   POST /api/auth/login
+//     @desc    Authenticate user & get JWT (only if verified)
+//     @access  Public
+router.post(
+  '/login',
+  [
+    body('email', 'Please include a valid email').isEmail(),
+    body('password', 'Password is required').exists()
+  ],
+  async (req, res) => {
+    //Validate input
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email, password } = req.body;
+    try {
+      //Check if user exists
+      const user = await User.findOne({ email });
+      if (!user) {
+        return res
+          .status(400)
+          .json({ errors: [{ msg: 'Account is not registered. Please register your account' }] });
+      }
+
+      //Compare password
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res
+          .status(400)
+          .json({ errors: [{ msg: 'Invalid credentials' }] });
+      }
+
+      //Enforce email verification only for non-admins
+      if (user.role !== 'admin' && !user.isVerified) {
+        return res
+          .status(400)
+          .json({ errors: [{ msg: 'Please verify your email before logging in.' }] });
+      }
+
+      //Create JWT payload (include role)
+      const payload = {
+        user: {
+          id: user.id,
+          role: user.role
+        }
+      };
+
+      //Sign token (expires in 2 hours)
+      jwt.sign(
+        payload,
+        process.env.JWT_SECRET,
+        { expiresIn: '2h' },
+        (err, token) => {
+          if (err) throw err;
+          res.json({ token });
+        }
+      );
+    } catch (err) {
+      console.error(err.message);
+      res.status(500).send('Server error');
+    }
+  }
+);
+
 
 // ─── @route   POST /api/auth/forgot-password
 //     @desc    Send password reset email
@@ -311,6 +379,70 @@ router.post(
       await user.save();
 
       res.json({ msg: 'Password changed successfully' });
+    } catch (err) {
+      console.error(err);
+      res.status(500).send('Server error');
+    }
+  }
+);
+
+// ─── @route   GET /api/auth/me
+//     @desc    Get current user (protected)
+//     @access  Private
+router.get('/me', auth, async (req, res) => {
+  try {
+    // req.user.id comes from authMiddleware
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ msg: 'User not found' });
+    }
+    res.json(user);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).send('Server error');
+  }
+});
+
+// ─── @route   PUT /api/auth/me
+//     @desc    Update current user’s profile (name, mobile, bio)
+//     @access  Private
+router.put(
+  '/me',
+  auth,
+  [
+    body('name', 'Name is required').optional().notEmpty(),
+    body('mobile', 'Mobile must be 10 digits').optional().isLength({ min: 10, max: 10 }),
+    body('bio', 'Bio must be under 500 characters').optional().isLength({ max: 500 })
+  ],
+  async (req, res) => {
+    //Validate inputs
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    try {
+      //Pick only the allowed fields
+      const updates = {};
+      ['name', 'mobile', 'bio'].forEach(field => {
+        if (req.body[field] !== undefined) {
+          updates[field] = req.body[field];
+        }
+      });
+
+      //Find & update
+      const user = await User.findByIdAndUpdate(
+        req.user.id,
+        { $set: updates },
+        { new: true, runValidators: true }
+      ).select('-password');
+
+      if (!user) {
+        return res.status(404).json({ msg: 'User not found' });
+      }
+
+      //Return the updated user
+      res.json(user);
     } catch (err) {
       console.error(err);
       res.status(500).send('Server error');
