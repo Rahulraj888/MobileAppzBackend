@@ -6,6 +6,7 @@ import path         from 'path';
 import { fileURLToPath } from 'url';
 
 import authRoutes   from './routes/auth.js';
+import reportRoutes from './routes/reports.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -18,6 +19,10 @@ app.use(express.json());
 
 // Mount routes
 app.use('/api/auth',   authRoutes);
+app.use('/api/reports', reportRoutes);
+
+// Serve image uploads
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Health check
 app.get('/', (req, res) => res.send('API is running'));
