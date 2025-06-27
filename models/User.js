@@ -1,6 +1,8 @@
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
-const userSchema = new mongoose.Schema({
+const { Schema } = mongoose;
+
+const userSchema = new Schema({
   name: {
     type: String,
     required: true,
@@ -34,31 +36,17 @@ const userSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
-  //for email verification
   isVerified: {
     type: Boolean,
     default: false
   },
-  emailVerificationToken: {
-    type: String
-  },
-  emailVerificationTokenExpires: {
-    type: Date
-  },
-  verifiedAt: {
-    type: Date
-  },
-  resetPasswordToken: {
-    type: String
-  },
-  resetPasswordExpires: {
-    type: Date
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  emailVerificationToken: String,
+  emailVerificationTokenExpires: Date,
+  verifiedAt: Date,
+  resetPasswordToken: String,
+  resetPasswordExpires: Date
+}, {
+  timestamps: { createdAt: 'createdAt' }
 });
 
-
-module.exports = mongoose.model('User', userSchema);
+export default mongoose.model('User', userSchema);

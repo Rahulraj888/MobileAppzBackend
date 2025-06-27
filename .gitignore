@@ -1,5 +1,5 @@
 node_modules/
-uploads/
 .env
 .DS_Store
 package-lock.json
+uploads/
