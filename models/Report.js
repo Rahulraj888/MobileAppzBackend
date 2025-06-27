@@ -24,6 +24,10 @@ const reportSchema = new Schema({
       required: true
     }
   },
+  address: {
+    type: String,
+    required: true            
+  },
   description: {
     type: String,
     maxlength: 500,
@@ -37,6 +41,9 @@ const reportSchema = new Schema({
     type: String,
     enum: ['Pending','In Progress','Fixed','Rejected'],
     default: 'Pending'
+  },
+  rejectReason: {
+    type: String  
   }
 }, { timestamps: true });
 
