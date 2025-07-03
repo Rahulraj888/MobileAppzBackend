@@ -75,4 +75,24 @@ router.post(
   }
 );
 
+// DELETE /api/reports/:id
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    const report = await Report.findById(req.params.id);
+    if (!report) return res.status(404).json({ msg: 'Report not found' });
+    // only the creator can delete
+    if (report.user.toString() !== req.user.id)
+      return res.status(403).json({ msg: 'Unauthorized' });
+    // only pending reports are deletable
+    if (report.status !== 'Pending')
+      return res.status(400).json({ msg: 'Only pending reports can be deleted' });
+
+    await report.deleteOne();
+    res.json({ msg: 'Report deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error deleting report' });
+  }
+});
+
 export default router;
