@@ -75,6 +75,126 @@ router.post(
   }
 );
 
+// GET /api/reports
+// List or filter reports (including reporter name/email)
+router.get('/', auth, async (req, res) => {
+  try {
+    const { status = 'all', type = 'all' } = req.query;
+    const filter = {};
+    if (status !== 'all')    filter.status    = status;
+    if (type   !== 'all')    filter.issueType = type;
+
+    // Populate user (name & email), then lean()
+    const reports = await Report.find(filter)
+      .populate('user', 'name email')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const ids = reports.map(r => r._id);
+    const [ ups, cms ] = await Promise.all([
+      Upvote.aggregate([
+        { $match: { report: { $in: ids } } },
+        { $group: { _id: '$report', count: { $sum: 1 } } }
+      ]),
+      Comment.aggregate([
+        { $match: { report: { $in: ids } } },
+        { $group: { _id: '$report', count: { $sum: 1 } } }
+      ])
+    ]);
+
+    const upMap = ups.reduce((m,u) => {
+      m[u._id.toString()] = u.count;
+      return m;
+    }, {});
+    const cMap = cms.reduce((m,c) => {
+      m[c._id.toString()] = c.count;
+      return m;
+    }, {});
+
+    // Enrich each report with upvoteCount, commentCount, plus user.name & user.email
+    const enriched = reports.map(r => ({
+      _id:         r._id,
+      issueType:   r.issueType,
+      description: r.description,
+      location:    r.location,
+      address:     r.address,
+      status:      r.status,
+      rejectReason:r.rejectReason,
+      createdAt:   r.createdAt,
+      updatedAt:   r.updatedAt,
+      imageUrls:   r.imageUrls,
+      user: {
+        _id:   r.user._id,
+        name:  r.user.name,
+        email: r.user.email
+      },
+      upvoteCount:  upMap[r._id.toString()]  || 0,
+      commentCount: cMap[r._id.toString()]   || 0
+    }));
+
+    res.json(enriched);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error listing reports' });
+  }
+});
+
+// GET /api/reports/:id
+// Fetch single report (for editing or detail view)
+router.get('/:id', auth, async (req, res) => {
+  try {
+    const report = await Report.findById(req.params.id);
+    if (!report) return res.status(404).json({ msg: 'Report not found' });
+    if (report.user.toString() !== req.user.id)
+      return res.status(403).json({ msg: 'Unauthorized' });
+
+    res.json(report);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error fetching report' });
+  }
+});
+
+// PUT /api/reports/:id
+// Update an existing report (only if Pending)
+router.put(
+  '/:id',
+  auth,
+  upload.array('images', 5),
+  async (req, res) => {
+    try {
+      const report = await Report.findById(req.params.id);
+      if (!report) return res.status(404).json({ msg: 'Report not found' });
+      // only the creator can edit
+      if (report.user.toString() !== req.user.id)
+        return res.status(403).json({ msg: 'Unauthorized' });
+      // only pending reports are editable
+      if (report.status !== 'Pending')
+        return res.status(400).json({ msg: 'Only pending reports can be edited' });
+
+      const { issueType, latitude, longitude, description, address } = req.body;
+      if (issueType)  report.issueType = issueType;
+      if (description) report.description = description;
+      if (address)     report.address     = address;  // ← new
+      if (latitude && longitude) {
+        report.location.coordinates = [
+          parseFloat(longitude),
+          parseFloat(latitude)
+        ];
+      }
+      if (req.files?.length) {
+        report.imageUrls = req.files.map(f => `/uploads/${f.filename}`);
+      }
+
+      await report.save();
+      res.json(report);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ msg: 'Server error updating report' });
+    }
+  }
+);
+
 // DELETE /api/reports/:id
 router.delete('/:id', auth, async (req, res) => {
   try {
