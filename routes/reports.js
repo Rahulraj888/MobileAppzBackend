@@ -157,37 +157,62 @@ router.get('/:id', auth, async (req, res) => {
 
 // PUT /api/reports/:id
 // Update an existing report (only if Pending)
+// PUT /api/reports/:id
+// Update an existing report (only if Pending)
 router.put(
   '/:id',
   auth,
   upload.array('images', 5),
   async (req, res) => {
+    // Validate
+    const errors = validationResult(req);
+    if (!errors.isEmpty())
+      return res.status(400).json({ errors: errors.array() });
+
     try {
-      const report = await Report.findById(req.params.id);
+      // Find & authorize
+      let report = await Report.findById(req.params.id);
       if (!report) return res.status(404).json({ msg: 'Report not found' });
-      // only the creator can edit
       if (report.user.toString() !== req.user.id)
         return res.status(403).json({ msg: 'Unauthorized' });
-      // only pending reports are editable
-      if (report.status !== 'Pending')
-        return res.status(400).json({ msg: 'Only pending reports can be edited' });
 
+      // Apply updates
       const { issueType, latitude, longitude, description, address } = req.body;
-      if (issueType)  report.issueType = issueType;
-      if (description) report.description = description;
-      if (address)     report.address     = address;  // ← new
-      if (latitude && longitude) {
-        report.location.coordinates = [
-          parseFloat(longitude),
-          parseFloat(latitude)
-        ];
-      }
-      if (req.files?.length) {
+      report.issueType = issueType;
+      report.location = {
+        type: 'Point',
+        coordinates: [parseFloat(longitude), parseFloat(latitude)],
+      };
+      report.description = description;
+      report.address = address;
+      if (req.files && req.files.length) {
         report.imageUrls = req.files.map(f => `/uploads/${f.filename}`);
       }
 
       await report.save();
-      res.json(report);
+
+      // Send “edit” confirmation email
+      const reporter = await User.findById(req.user.id).select('name email');
+      if (reporter) {
+        const html = `
+          <h2>Your report has been updated</h2>
+          <p>Hi ${reporter.name},</p>
+          <p>We’ve successfully updated your report of <strong>${report.issueType}</strong>:</p>
+          <ul>
+            <li><strong>Description:</strong> ${report.description}</li>
+            <li><strong>Location:</strong> (${latitude}, ${longitude})</li>
+            <li><strong>Address:</strong> ${address}</li>
+          </ul>
+          <p>If you didn’t make this change, please reply to this email immediately.</p>
+          <p>Thanks,<br/>The Mobile Appz Team</p>
+        `;
+        sendEmail({
+          to: reporter.email,
+          subject: 'Your report was updated',
+          html,
+        }).catch(err => console.error('Email error (update):', err));
+      }
+      res.json({ report, msg: 'Report updated and confirmation email sent.' });
     } catch (err) {
       console.error(err);
       res.status(500).json({ msg: 'Server error updating report' });
@@ -200,15 +225,38 @@ router.delete('/:id', auth, async (req, res) => {
   try {
     const report = await Report.findById(req.params.id);
     if (!report) return res.status(404).json({ msg: 'Report not found' });
-    // only the creator can delete
     if (report.user.toString() !== req.user.id)
       return res.status(403).json({ msg: 'Unauthorized' });
-    // only pending reports are deletable
     if (report.status !== 'Pending')
       return res.status(400).json({ msg: 'Only pending reports can be deleted' });
 
+    // capture details for email before deletion
+    const { issueType, description, address, location } = report.toObject();
     await report.deleteOne();
-    res.json({ msg: 'Report deleted successfully' });
+
+    // send “delete” confirmation email
+    const reporter = await User.findById(req.user.id).select('name email');
+    if (reporter) {
+      const html = `
+        <h2>Your report has been deleted</h2>
+        <p>Hi ${reporter.name},</p>
+        <p>You’ve successfully deleted your report of <strong>${issueType}</strong>:</p>
+        <ul>
+          <li><strong>Description:</strong> ${description}</li>
+          <li><strong>Location:</strong> (${location.coordinates[1]}, ${location.coordinates[0]})</li>
+          <li><strong>Address:</strong> ${address}</li>
+        </ul>
+        <p>If you didn’t intend to delete this, please reply to this email immediately.</p>
+        <p>Thanks,<br/>The Mobile Appz Team</p>
+      `;
+      sendEmail({
+        to: reporter.email,
+        subject: 'Your report was deleted',
+        html,
+      }).catch(err => console.error('Email error (delete):', err));
+    }
+
+    res.json({ msg: 'Report deleted and confirmation email sent.' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Server error deleting report' });
