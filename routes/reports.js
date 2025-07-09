@@ -157,8 +157,6 @@ router.get('/:id', auth, async (req, res) => {
 
 // PUT /api/reports/:id
 // Update an existing report (only if Pending)
-// PUT /api/reports/:id
-// Update an existing report (only if Pending)
 router.put(
   '/:id',
   auth,
@@ -260,6 +258,54 @@ router.delete('/:id', auth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ msg: 'Server error deleting report' });
+  }
+});
+
+// POST /api/reports/:id/upvote
+router.post('/:id/upvote', auth, async (req, res) => {
+  try {
+    const { id: reportId } = req.params;
+    const userId = req.user.id;
+    const exists = await Upvote.findOne({ user: userId, report: reportId });
+    if (exists) return res.status(400).json({ msg: 'Already upvoted' });
+
+    await Upvote.create({ user: userId, report: reportId });
+    const count = await Upvote.countDocuments({ report: reportId });
+    res.json({ upvotes: count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error upvoting' });
+  }
+});
+
+// POST /api/reports/:id/comments
+// Add a comment
+router.post('/:id/comments', auth, async (req, res) => {
+  try {
+    const comment = await Comment.create({
+      user: req.user.id,
+      report: req.params.id,
+      text: req.body.text
+    });
+    await comment.populate('user', 'name');
+    res.status(201).json(comment);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error commenting' });
+  }
+});
+
+// GET /api/reports/:id/comments
+// List comments for a report
+router.get('/:id/comments', auth, async (req, res) => {
+  try {
+    const comments = await Comment.find({ report: req.params.id })
+      .sort({ createdAt: -1 })
+      .populate('user', 'name');
+    res.json(comments);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ msg: 'Server error listing comments' });
   }
 });
 
