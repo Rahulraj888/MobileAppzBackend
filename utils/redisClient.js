@@ -1,6 +1,6 @@
 import { createClient } from 'redis';
 
-const redisClient = createClient(); // uses localhost:6379 by default
+const redisClient = createClient();
 redisClient.on('error', err => console.error('Redis error:', err));
 
 await redisClient.connect();

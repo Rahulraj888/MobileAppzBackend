@@ -1,32 +1,49 @@
 import express from 'express';
-import Comment from '../models/Comment.js';
+import { body, param, validationResult } from 'express-validator';
+import asyncHandler from '../middleware/asyncHandler.js';
 import auth from '../middleware/authMiddleware.js';
+import Comment from '../models/Comment.js';
 
 const router = express.Router();
+
+// Middleware to check express-validator results
+function validate(req, res, next) {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  next();
+}
 
 /**
  * PUT /api/comments/:id
  * Edit one’s own comment
  */
-router.put('/:id', auth, async (req, res) => {
-  try {
+router.put(
+  '/:id',
+  auth,
+  [
+    param('id', 'Invalid comment ID').isMongoId(),
+    body('text', 'Comment text is required').trim().notEmpty()
+  ],
+  validate,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
     const { text } = req.body;
-    if (!text || !text.trim()) {
-      return res.status(400).json({ msg: 'Comment text is required' });
-    }
 
     // Find the comment
-    const comment = await Comment.findById(req.params.id);
+    const comment = await Comment.findById(id);
     if (!comment) {
       return res.status(404).json({ msg: 'Comment not found' });
     }
 
-    // Only the author may update
+    // Authorization: only author can edit
     if (comment.user.toString() !== req.user.id) {
       return res.status(403).json({ msg: 'Unauthorized' });
     }
 
-    comment.text = text.trim();
+    // Apply update
+    comment.text = text;
     comment.updatedAt = Date.now();
     await comment.save();
 
@@ -34,34 +51,33 @@ router.put('/:id', auth, async (req, res) => {
     await comment.populate('user', 'name');
 
     res.json(comment);
-  } catch (err) {
-    console.error('Error updating comment:', err);
-    res.status(500).json({ msg: 'Server error updating comment' });
-  }
-});
+  })
+);
 
 /**
  * DELETE /api/comments/:id
  * Delete one’s own comment
  */
-router.delete('/:id', auth, async (req, res) => {
-  try {
-    const comment = await Comment.findById(req.params.id);
+router.delete(
+  '/:id',
+  auth,
+  [ param('id', 'Invalid comment ID').isMongoId() ],
+  validate,
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    const comment = await Comment.findById(id);
     if (!comment) {
       return res.status(404).json({ msg: 'Comment not found' });
     }
 
-    // Only the author may delete
     if (comment.user.toString() !== req.user.id) {
       return res.status(403).json({ msg: 'Unauthorized' });
     }
 
     await comment.deleteOne();
     res.json({ msg: 'Comment deleted' });
-  } catch (err) {
-    console.error('Error deleting comment:', err);
-    res.status(500).json({ msg: 'Server error deleting comment' });
-  }
-});
+  })
+);
 
 export default router;
