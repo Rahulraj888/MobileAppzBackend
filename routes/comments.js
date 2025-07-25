@@ -3,6 +3,7 @@ import { body, param, validationResult } from 'express-validator';
 import asyncHandler from '../middleware/asyncHandler.js';
 import auth from '../middleware/authMiddleware.js';
 import Comment from '../models/Comment.js';
+import { invalidateUserReportCache } from '../utils/cacheUtils.js';
 
 const router = express.Router();
 
@@ -30,6 +31,7 @@ router.put(
   asyncHandler(async (req, res) => {
     const { id } = req.params;
     const { text } = req.body;
+    const userId = req.user.id;
 
     // Find the comment
     const comment = await Comment.findById(id);
@@ -49,7 +51,7 @@ router.put(
 
     // Re-populate user name
     await comment.populate('user', 'name');
-
+    await invalidateUserReportCache(userId);
     res.json(comment);
   })
 );
@@ -65,6 +67,7 @@ router.delete(
   validate,
   asyncHandler(async (req, res) => {
     const { id } = req.params;
+    const userId = req.user.id;
 
     const comment = await Comment.findById(id);
     if (!comment) {
@@ -76,6 +79,7 @@ router.delete(
     }
 
     await comment.deleteOne();
+    await invalidateUserReportCache(userId);
     res.json({ msg: 'Comment deleted' });
   })
 );
